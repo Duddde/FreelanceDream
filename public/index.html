@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Net-en-poche freelance — que rapporte vraiment ton TJM ?</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <header class="entete">
+      <h1>Ton TJM ne te rapporte pas ton TJM</h1>
+      <p class="sous-titre">
+        Simule ton <strong>net-en-poche par jour facturé</strong> en SASU
+        (salaire minimum&nbsp;+&nbsp;dividendes). Ajuste chaque paramètre à ta
+        situation&nbsp;: jours travaillés, frais, rémunération.
+      </p>
+    </header>
+
+    <div class="colonnes">
+      <!-- ==================== Paramètres ==================== -->
+      <form id="formulaire" class="parametres" autocomplete="off">
+        <fieldset>
+          <legend>Activité</legend>
+          <label>
+            <span>TJM (€ HT)</span>
+            <input type="number" name="tjm" value="500" min="0" step="10">
+          </label>
+          <label>
+            <span>Jours ouvrés / an</span>
+            <input type="number" name="joursOuvres" value="218" min="0" max="365" step="1">
+          </label>
+          <label>
+            <span>Semaines de congés</span>
+            <input type="number" name="semainesConges" value="5" min="0" max="30" step="0.5">
+          </label>
+          <label>
+            <span>Jours d'intercontrat</span>
+            <input type="number" name="joursIntercontrat" value="13" min="0" max="365" step="1">
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Frais professionnels (€ / an)</legend>
+          <label><span>Comptable</span><input type="number" name="fraisComptable" value="1500" min="0" step="100"></label>
+          <label><span>RC Pro</span><input type="number" name="fraisRcPro" value="400" min="0" step="50"></label>
+          <label><span>Mutuelle</span><input type="number" name="fraisMutuelle" value="2000" min="0" step="100"></label>
+          <label><span>Prévoyance</span><input type="number" name="fraisPrevoyance" value="2000" min="0" step="100"></label>
+          <label><span>Matériel + logiciels</span><input type="number" name="fraisMateriel" value="2000" min="0" step="100"></label>
+          <label><span>Formation</span><input type="number" name="fraisFormation" value="2000" min="0" step="100"></label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Rémunération &amp; fiscalité (SASU)</legend>
+          <label>
+            <span>Salaire net annuel (€)</span>
+            <input type="number" name="salaireNetAnnuel" value="15000" min="0" step="500">
+          </label>
+          <label>
+            <span>Charges sur salaire (% du net)</span>
+            <input type="number" name="tauxChargesSalaire" value="46.7" min="0" max="200" step="0.1">
+          </label>
+          <label>
+            <span>Taux moyen d'IR sur salaire (%)</span>
+            <input type="number" name="tauxIrSalaire" value="6.7" min="0" max="60" step="0.1">
+          </label>
+          <label>
+            <span>PFU sur dividendes (%)</span>
+            <input type="number" name="tauxPfu" value="30" min="0" max="60" step="0.1">
+          </label>
+          <p class="note">
+            IS calculé automatiquement&nbsp;: 15&nbsp;% jusqu'à 42&nbsp;500&nbsp;€
+            de résultat, 25&nbsp;% au-delà.
+          </p>
+        </fieldset>
+
+        <button type="button" id="reinitialiser">Réinitialiser les valeurs du post</button>
+      </form>
+
+      <!-- ==================== Résultats ==================== -->
+      <section class="resultats" aria-live="polite">
+        <div class="tuile-hero">
+          <span class="tuile-libelle">Net-en-poche par jour facturé</span>
+          <span class="tuile-valeur" id="netParJour">—</span>
+          <span class="tuile-detail" id="ratioTjm">—</span>
+        </div>
+
+        <div class="tuiles-secondaires">
+          <div class="tuile">
+            <span class="tuile-libelle">Net-en-poche annuel</span>
+            <span class="tuile-valeur-sec" id="netAnnuel">—</span>
+          </div>
+          <div class="tuile">
+            <span class="tuile-libelle">Soit par mois</span>
+            <span class="tuile-valeur-sec" id="netMensuel">—</span>
+          </div>
+          <div class="tuile">
+            <span class="tuile-libelle">Jours facturés</span>
+            <span class="tuile-valeur-sec" id="joursFactures">—</span>
+          </div>
+          <div class="tuile">
+            <span class="tuile-libelle">CA annuel HT</span>
+            <span class="tuile-valeur-sec" id="caAnnuel">—</span>
+          </div>
+        </div>
+
+        <p class="alerte" id="alerte" hidden></p>
+
+        <figure class="viz-root graphique">
+          <figcaption class="graphique-titre">Où va ton chiffre d'affaires</figcaption>
+          <div class="barre" id="barre" role="img"
+               aria-label="Répartition du chiffre d'affaires entre net en poche, frais et prélèvements"></div>
+          <ul class="legende" id="legende"></ul>
+          <div class="infobulle" id="infobulle" hidden></div>
+        </figure>
+
+        <details class="detail" open>
+          <summary>Le calcul, étape par étape</summary>
+          <table>
+            <tbody id="tableDetail"></tbody>
+          </table>
+        </details>
+      </section>
+    </div>
+
+    <footer class="pied">
+      <p>
+        Simulation indicative — modèle SASU «&nbsp;salaire minimum +
+        dividendes&nbsp;». Ne remplace pas un expert-comptable.
+      </p>
+    </footer>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
