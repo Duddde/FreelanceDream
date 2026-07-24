@@ -11,6 +11,10 @@ Le bon indicateur d'un freelance n'est pas le TJM, c'est le
 laisse chaque hypothèse ajustable — parce que oui, toi tu factures peut-être
 plus de jours, avec un plus gros TJM et moins de frais.
 
+## 🚀 Essayer en ligne
+
+**https://srv725641.hstgr.cloud/simulateur/**
+
 ## Lancer l'app
 
 Aucune dépendance, Node ≥ 18 suffit :
