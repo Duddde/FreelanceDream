@@ -93,6 +93,15 @@ systemctl daemon-reload
 systemctl enable --now "$APP" >/dev/null 2>&1
 systemctl restart "$APP"
 
+sleep 1
+if ! curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/"; then
+  echo "⚠ L'app ne répond pas sur le port ${PORT} — il est peut-être déjà occupé" >&2
+  echo "  par une autre application. Relance avec un autre port interne :" >&2
+  echo "      curl -fsSL ... | sudo PORT=3001 bash -s -- ${DOMAINE} ${PREFIXE}" >&2
+  journalctl -u "$APP" --no-pager -n 5 >&2 || true
+  exit 1
+fi
+
 # 4. Nginx ──────────────────────────────────────────────────────────────
 if [ -n "$PREFIXE" ]; then
   # ── Mode préfixe : on greffe un location dans le site existant ───────
@@ -112,23 +121,51 @@ location ${PREFIXE}/ {
 }
 SNIP
 
-  # Trouve le fichier de conf qui déclare server_name pour ce domaine.
-  CONF="$(grep -rlE "server_name[^;]*(\s|^)${DOMAINE//./\\.}(\s|;)" /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null | head -1 || true)"
+  # Trouve le fichier qui déclare le bloc server visé, via la config
+  # effective (nginx -T voit tous les fichiers, où qu'ils soient).
+  # Priorité : server_name explicite du domaine, sinon bloc default_server,
+  # sinon catch-all server_name _.
+  DUMP="$(nginx -T 2>/dev/null)"
+  conf_pour() {
+    printf '%s\n' "$DUMP" | awk -v pat="$1" '
+      /^# configuration file/ { f = $4; sub(/:$/, "", f) }
+      $0 !~ /^[[:space:]]*#/ && $0 ~ pat { print f; exit }'
+  }
+  DOMAINE_RE="${DOMAINE//./\\.}"
+  # UNIQUE=1 : insérer une seule fois (un bloc peut avoir deux lignes
+  # listen default_server, ipv4 + ipv6) ; sinon insérer après chaque
+  # occurrence (blocs HTTP et HTTPS distincts du même fichier).
+  UNIQUE=0
+  ANCRE="server_name[^;]*${DOMAINE_RE}"
+  CONF="$(conf_pour "$ANCRE")"
   if [ -z "$CONF" ]; then
-    echo "⚠ Aucun site Nginx existant trouvé pour ${DOMAINE}." >&2
+    ANCRE="server_name[[:space:]][[:space:]]*_[[:space:]]*;"
+    CONF="$(conf_pour "$ANCRE")"
+  fi
+  if [ -z "$CONF" ]; then
+    ANCRE="listen[^;]*default_server"
+    UNIQUE=1
+    CONF="$(conf_pour "$ANCRE")"
+  fi
+  if [ -z "$CONF" ] || [ ! -f "$CONF" ]; then
+    echo "⚠ Impossible de localiser le bloc server existant pour ${DOMAINE}." >&2
+    echo "  Blocs présents dans la config Nginx :" >&2
+    printf '%s\n' "$DUMP" | grep -nE "^# configuration file|^[[:space:]]*server_name" >&2 || true
     echo "  Ajoute manuellement cette ligne dans le bloc server concerné :" >&2
     echo "      include ${SNIPPET};" >&2
     exit 1
   fi
-  CONF="$(readlink -f "$CONF")"
 
   if grep -q "snippets/${APP}.conf" "$CONF"; then
     echo "── Include déjà présent dans ${CONF}"
   else
     cp "$CONF" "${CONF}.avant-${APP}"
-    # Insère l'include après chaque server_name mentionnant le domaine
-    # (couvre les blocs HTTP et HTTPS du même fichier).
-    sed -i "/server_name[^;]*${DOMAINE//./\\.}/a\\    include ${SNIPPET};" "$CONF"
+    if [ "$UNIQUE" -eq 1 ]; then
+      sed -i "0,/${ANCRE}/{/${ANCRE}/a\\    include ${SNIPPET};
+}" "$CONF"
+    else
+      sed -i "/${ANCRE}/a\\    include ${SNIPPET};" "$CONF"
+    fi
     echo "── Include inséré dans ${CONF} (sauvegarde : ${CONF}.avant-${APP})"
   fi
 
