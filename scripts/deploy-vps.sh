@@ -133,59 +133,78 @@ location ${PREFIXE}/ {
 }
 SNIP
 
-  # Trouve le fichier qui déclare le bloc server visé, via la config
-  # effective (nginx -T voit tous les fichiers, où qu'ils soient).
-  # Priorité : server_name explicite du domaine, sinon bloc default_server,
-  # sinon catch-all server_name _.
-  DUMP="$(nginx -T 2>/dev/null)"
-  conf_pour() {
-    printf '%s\n' "$DUMP" | awk -v pat="$1" '
-      /^# configuration file/ { f = $4; sub(/:$/, "", f) }
-      $0 !~ /^[[:space:]]*#/ && $0 ~ pat { print f; exit }'
-  }
+  # Insère l'include dans CHAQUE bloc server qui sert ce domaine — HTTP
+  # (80) comme HTTPS (443), tous fichiers confondus. Sont concernés les
+  # blocs nommant le domaine, les catch-all (server_name _) et les
+  # default_server. L'analyse passe par la config effective (nginx -T),
+  # puis chaque fichier est modifié bloc par bloc, une insertion par bloc.
   DOMAINE_RE="${DOMAINE//./\\.}"
-  # UNIQUE=1 : insérer une seule fois (un bloc peut avoir deux lignes
-  # listen default_server, ipv4 + ipv6) ; sinon insérer après chaque
-  # occurrence (blocs HTTP et HTTPS distincts du même fichier).
-  UNIQUE=0
-  ANCRE="server_name[^;]*${DOMAINE_RE}"
-  CONF="$(conf_pour "$ANCRE")"
-  if [ -z "$CONF" ]; then
-    ANCRE="server_name[[:space:]][[:space:]]*_[[:space:]]*;"
-    CONF="$(conf_pour "$ANCRE")"
-  fi
-  if [ -z "$CONF" ]; then
-    ANCRE="listen[^;]*default_server"
-    UNIQUE=1
-    CONF="$(conf_pour "$ANCRE")"
-  fi
-  if [ -z "$CONF" ] || [ ! -f "$CONF" ]; then
-    echo "⚠ Impossible de localiser le bloc server existant pour ${DOMAINE}." >&2
+  CRITERE="server_name[^;#]*(${DOMAINE_RE}|_[[:space:]]*;)|listen[^;#]*default_server"
+  DUMP="$(nginx -T 2>/dev/null)"
+  FICHIERS="$(printf '%s\n' "$DUMP" | awk -v pat="$CRITERE" '
+    /^# configuration file/ { f = $4; sub(/:$/, "", f) }
+    $0 !~ /^[[:space:]]*#/ && $0 ~ pat && !vu[f]++ { print f }')"
+
+  if [ -z "$FICHIERS" ]; then
+    echo "⚠ Impossible de localiser un bloc server existant pour ${DOMAINE}." >&2
     echo "  Blocs présents dans la config Nginx :" >&2
-    printf '%s\n' "$DUMP" | grep -nE "^# configuration file|^[[:space:]]*server_name" >&2 || true
-    echo "  Ajoute manuellement cette ligne dans le bloc server concerné :" >&2
+    printf '%s\n' "$DUMP" | grep -nE "^# configuration file|^[[:space:]]*(server_name|listen)" >&2 || true
+    echo "  Ajoute manuellement cette ligne dans chaque bloc server concerné :" >&2
     echo "      include ${SNIPPET};" >&2
     exit 1
   fi
 
-  if grep -q "snippets/${APP}.conf" "$CONF"; then
-    echo "── Include déjà présent dans ${CONF}"
-  else
-    cp "$CONF" "${CONF}.avant-${APP}"
-    if [ "$UNIQUE" -eq 1 ]; then
-      sed -i "0,/${ANCRE}/{/${ANCRE}/a\\    include ${SNIPPET};
-}" "$CONF"
+  INSERE_AWK='
+    function nb(s, re,  t) { t = s; return gsub(re, "", t) }
+    { L[NR] = $0 }
+    END {
+      i = 1
+      while (i <= NR) {
+        if (L[i] ~ /^[[:space:]]*server([[:space:]{]|$)/) {
+          profondeur = 0; commence = 0; fin = NR
+          for (j = i; j <= NR; j++) {
+            profondeur += nb(L[j], "[{]")
+            if (profondeur > 0) commence = 1
+            profondeur -= nb(L[j], "[}]")
+            if (commence && profondeur <= 0) { fin = j; break }
+          }
+          concerne = 0; ouverture = 0; deja = 0
+          for (j = i; j <= fin; j++) {
+            if (!ouverture && L[j] ~ /[{]/) ouverture = j
+            if (L[j] !~ /^[[:space:]]*#/ && L[j] ~ CRIT) concerne = 1
+            if (index(L[j], SNIP) > 0) deja = 1
+          }
+          for (j = i; j <= fin; j++) {
+            print L[j]
+            if (j == ouverture && concerne && !deja) print "    include " SNIP ";"
+          }
+          i = fin + 1
+        } else { print L[i]; i++ }
+      }
+    }'
+
+  MODIFIES=""
+  for CONF in $FICHIERS; do
+    CONF="$(readlink -f "$CONF")"
+    [ -f "$CONF" ] || continue
+    NOUVEAU="$(awk -v CRIT="$CRITERE" -v SNIP="$SNIPPET" "$INSERE_AWK" "$CONF")"
+    if [ "$NOUVEAU" != "$(cat "$CONF")" ]; then
+      cp "$CONF" "${CONF}.avant-${APP}"
+      printf '%s\n' "$NOUVEAU" > "$CONF"
+      MODIFIES="$MODIFIES $CONF"
+      echo "── Include inséré dans ${CONF} (sauvegarde : ${CONF}.avant-${APP})"
     else
-      sed -i "/${ANCRE}/a\\    include ${SNIPPET};" "$CONF"
+      echo "── Rien à changer dans ${CONF}"
     fi
-    echo "── Include inséré dans ${CONF} (sauvegarde : ${CONF}.avant-${APP})"
-  fi
+  done
 
   if nginx -t; then
     systemctl reload nginx
   else
-    echo "⚠ nginx -t a échoué, restauration de la conf d'origine." >&2
-    [ -f "${CONF}.avant-${APP}" ] && cp "${CONF}.avant-${APP}" "$CONF"
+    echo "⚠ nginx -t a échoué, restauration des fichiers d'origine." >&2
+    for CONF in $MODIFIES; do
+      [ -f "${CONF}.avant-${APP}" ] && cp "${CONF}.avant-${APP}" "$CONF"
+    done
     nginx -t && systemctl reload nginx
     exit 1
   fi
