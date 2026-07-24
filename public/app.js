@@ -1,4 +1,6 @@
-import { simuler, DEFAUTS } from "/src/simulateur.js";
+// Import relatif : la page doit fonctionner aussi bien à la racine du
+// domaine que derrière un préfixe de chemin (ex. /simulateur/).
+import { simuler, DEFAUTS } from "./src/simulateur.js";
 
 const formulaire = document.getElementById("formulaire");
 const barre = document.getElementById("barre");
