@@ -5,7 +5,7 @@
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const RACINE = fileURLToPath(new URL(".", import.meta.url));
@@ -21,22 +21,25 @@ const TYPES_MIME = {
 };
 
 const serveur = createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  let chemin = normalize(decodeURIComponent(url.pathname)).replace(
-    /^(\.\.[/\\])+/,
-    ""
-  );
+  const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+  // Le chemin d'URL se manipule avec des règles URL (slashs), jamais avec
+  // path.normalize : sous Windows celui-ci convertit en antislashs et
+  // casse toutes les comparaisons.
+  let chemin = decodeURIComponent(url.pathname);
   if (chemin === "/" || chemin === "") chemin = "/index.html";
 
-  // Seuls public/ et src/ sont servis.
-  const fichier = chemin.startsWith("/src/")
-    ? join(RACINE, chemin)
-    : join(RACINE, "public", chemin);
-
-  if (!fichier.startsWith(RACINE)) {
-    res.writeHead(403).end("Accès refusé");
+  const segments = chemin.split("/").filter(Boolean);
+  if (segments.includes("..") || segments.includes(".")) {
+    res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Accès refusé");
     return;
   }
+
+  // Seuls public/ et src/ sont servis.
+  const fichier =
+    segments[0] === "src"
+      ? join(RACINE, ...segments)
+      : join(RACINE, "public", ...segments);
 
   try {
     const contenu = await readFile(fichier);
