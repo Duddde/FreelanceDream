@@ -67,7 +67,20 @@ else
 fi
 
 # 3. Service systemd ────────────────────────────────────────────────────
-echo "── Service systemd ${APP}"
+# Choix du port interne : on arrête notre propre service puis on prend le
+# premier port libre à partir de PORT — une autre app (ex. pm2 sur 3000)
+# ne doit jamais recevoir le trafic du simulateur.
+systemctl stop "$APP" >/dev/null 2>&1 || true
+port_libre() {
+  # Essaie de se binder comme le fera l'app : fiable partout où Node existe.
+  node -e "const s=require('net').createServer();s.once('error',()=>process.exit(1));s.listen($1,()=>s.close(()=>process.exit(0)))" 2>/dev/null
+}
+while ! port_libre "$PORT"; do
+  echo "── Port ${PORT} déjà occupé par une autre app, essai du suivant"
+  PORT=$((PORT + 1))
+done
+
+echo "── Service systemd ${APP} (port interne ${PORT})"
 cat > "/etc/systemd/system/${APP}.service" <<UNIT
 [Unit]
 Description=Simulateur FreelanceDream
@@ -94,11 +107,10 @@ systemctl enable --now "$APP" >/dev/null 2>&1
 systemctl restart "$APP"
 
 sleep 1
-if ! curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/"; then
-  echo "⚠ L'app ne répond pas sur le port ${PORT} — il est peut-être déjà occupé" >&2
-  echo "  par une autre application. Relance avec un autre port interne :" >&2
-  echo "      curl -fsSL ... | sudo PORT=3001 bash -s -- ${DOMAINE} ${PREFIXE}" >&2
-  journalctl -u "$APP" --no-pager -n 5 >&2 || true
+# Vérifie que c'est bien le simulateur qui répond sur ce port.
+if ! curl -fsS "http://127.0.0.1:${PORT}/" | grep -q "TJM"; then
+  echo "⚠ Le simulateur ne répond pas sur le port ${PORT}. Derniers logs :" >&2
+  journalctl -u "$APP" --no-pager -n 10 >&2 || true
   exit 1
 fi
 
