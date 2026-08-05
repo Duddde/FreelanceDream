@@ -21,7 +21,7 @@ Aucune dépendance, Node ≥ 18 suffit :
 
 ```bash
 npm start
-# → http://localhost:3000
+# → http://localhost:3001
 ```
 
 ## Tester
